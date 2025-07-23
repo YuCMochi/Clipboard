@@ -1,0 +1,14 @@
+C:\Users\0\Desktop\my projects\Clipboard\ClipboardApp\bin\Debug\net8.0-windows\ClipboardApp.exe
+C:\Users\0\Desktop\my projects\Clipboard\ClipboardApp\bin\Debug\net8.0-windows\ClipboardApp.deps.json
+C:\Users\0\Desktop\my projects\Clipboard\ClipboardApp\bin\Debug\net8.0-windows\ClipboardApp.runtimeconfig.json
+C:\Users\0\Desktop\my projects\Clipboard\ClipboardApp\bin\Debug\net8.0-windows\ClipboardApp.dll
+C:\Users\0\Desktop\my projects\Clipboard\ClipboardApp\bin\Debug\net8.0-windows\ClipboardApp.pdb
+C:\Users\0\Desktop\my projects\Clipboard\ClipboardApp\obj\Debug\net8.0-windows\ClipboardApp.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\0\Desktop\my projects\Clipboard\ClipboardApp\obj\Debug\net8.0-windows\ClipboardApp.AssemblyInfoInputs.cache
+C:\Users\0\Desktop\my projects\Clipboard\ClipboardApp\obj\Debug\net8.0-windows\ClipboardApp.AssemblyInfo.cs
+C:\Users\0\Desktop\my projects\Clipboard\ClipboardApp\obj\Debug\net8.0-windows\ClipboardApp.csproj.CoreCompileInputs.cache
+C:\Users\0\Desktop\my projects\Clipboard\ClipboardApp\obj\Debug\net8.0-windows\ClipboardApp.dll
+C:\Users\0\Desktop\my projects\Clipboard\ClipboardApp\obj\Debug\net8.0-windows\refint\ClipboardApp.dll
+C:\Users\0\Desktop\my projects\Clipboard\ClipboardApp\obj\Debug\net8.0-windows\ClipboardApp.pdb
+C:\Users\0\Desktop\my projects\Clipboard\ClipboardApp\obj\Debug\net8.0-windows\ClipboardApp.genruntimeconfig.cache
+C:\Users\0\Desktop\my projects\Clipboard\ClipboardApp\obj\Debug\net8.0-windows\ref\ClipboardApp.dll
