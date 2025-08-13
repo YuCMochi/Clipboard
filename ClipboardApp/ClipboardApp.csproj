@@ -7,13 +7,20 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>../icon/app/256x256.ico</ApplicationIcon>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeAllContentForSelfExtract>false</IncludeAllContentForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="../icon/**">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Link>icon/%(RecursiveDir)%(Filename)%(Extension)</Link>
-    </Content>
+    <EmbeddedResource Include="../icon/on/*.ico">
+      <Link>icon/on/%(Filename)%(Extension)</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="../icon/off/*.ico">
+      <Link>icon/off/%(Filename)%(Extension)</Link>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>

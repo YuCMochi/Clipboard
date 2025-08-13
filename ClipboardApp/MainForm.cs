@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
+using System.Reflection;
 
 namespace ClipboardApp
 {
@@ -71,18 +72,40 @@ namespace ClipboardApp
             return SystemIcons.Application;
         }
 
+        private Icon? LoadEmbeddedIcon(string resourceName)
+        {
+            try
+            {
+                var asm = Assembly.GetExecutingAssembly();
+                using Stream? s = asm.GetManifestResourceStream(resourceName);
+                if (s != null) return new Icon(s);
+            }
+            catch { }
+            return null;
+        }
+
         private void LoadIcons()
         {
-            string exeDir = AppDomain.CurrentDomain.BaseDirectory;
-            string iconDir = Path.Combine(exeDir, "icon");
-            iconOn = LoadBestIcon(new string[] {
-                Path.Combine(iconDir, "on", "32x32.ico"),
-                Path.Combine(iconDir, "on", "16x16.ico")
-            });
-            iconOff = LoadBestIcon(new string[] {
-                Path.Combine(iconDir, "off", "32x32.ico"),
-                Path.Combine(iconDir, "off", "16x16.ico")
-            });
+            // Try embedded resources first (for single-file publish)
+            iconOn = LoadEmbeddedIcon("ClipboardApp.icon.on.32x32.ico")
+                     ?? LoadEmbeddedIcon("ClipboardApp.icon.on.16x16.ico");
+            iconOff = LoadEmbeddedIcon("ClipboardApp.icon.off.32x32.ico")
+                      ?? LoadEmbeddedIcon("ClipboardApp.icon.off.16x16.ico");
+
+            if (iconOn == null || iconOff == null)
+            {
+                // Fallback to disk paths during dev
+                string exeDir = AppDomain.CurrentDomain.BaseDirectory;
+                string iconDir = Path.Combine(exeDir, "icon");
+                iconOn ??= LoadBestIcon(new string[] {
+                    Path.Combine(iconDir, "on", "32x32.ico"),
+                    Path.Combine(iconDir, "on", "16x16.ico")
+                });
+                iconOff ??= LoadBestIcon(new string[] {
+                    Path.Combine(iconDir, "off", "32x32.ico"),
+                    Path.Combine(iconDir, "off", "16x16.ico")
+                });
+            }
         }
 
         private void InitTray()
