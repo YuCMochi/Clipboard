@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
-    <ApplicationIcon>icon/app/256x256.ico</ApplicationIcon>
+    <ApplicationIcon>../icon/app/256x256.ico</ApplicationIcon>
   </PropertyGroup>
 
 </Project>
