@@ -4,6 +4,8 @@ using System.Drawing;
 using System.IO;
 using System.Diagnostics;
 using System.Threading;
+using System.Runtime.InteropServices;
+using Microsoft.Win32;
 
 namespace ClipboardApp
 {
@@ -14,21 +16,32 @@ namespace ClipboardApp
         private ToolStripMenuItem toggleMonitorMenuItem;
         private ToolStripMenuItem exitMenuItem;
         private bool isMonitoring = true;
-        private System.Windows.Forms.Timer clipboardTimer;
-        private string lastClipboardText = "";
+        private string lastOpenedPath = "";
         private Icon iconOn;
         private Icon iconOff;
         private static Mutex? singleInstanceMutex;
+
+        // Startup registry config
+        private const string RunRegPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+        private const string RunValueName = "ClipboardApp";
+
+        // Clipboard event listener
+        private const int WM_CLIPBOARDUPDATE = 0x031D;
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool AddClipboardFormatListener(IntPtr hwnd);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
 
         public MainForm()
         {
             LoadIcons();
             InitializeComponent();
             InitTray();
-            InitClipboardMonitor();
             this.WindowState = FormWindowState.Minimized;
             this.ShowInTaskbar = false;
             this.Visible = false;
+            var _ = this.Handle; // 確保建立視窗 Handle 以註冊剪貼簿事件
         }
 
         [STAThread]
@@ -75,8 +88,16 @@ namespace ClipboardApp
         private void InitTray()
         {
             trayMenu = new ContextMenuStrip();
+            var startupItem = new ToolStripMenuItem("開機自動啟動") { Checked = IsStartupEnabled() };
+            startupItem.Click += (s, e) =>
+            {
+                bool next = !startupItem.Checked;
+                SetStartup(next);
+                startupItem.Checked = next;
+            };
             toggleMonitorMenuItem = new ToolStripMenuItem("暫停監控", null, OnToggleMonitor);
             exitMenuItem = new ToolStripMenuItem("退出", null, OnExit);
+            trayMenu.Items.Add(startupItem);
             trayMenu.Items.Add(toggleMonitorMenuItem);
             trayMenu.Items.Add(exitMenuItem);
 
@@ -88,36 +109,37 @@ namespace ClipboardApp
             trayIcon.MouseClick += TrayIcon_MouseClick;
         }
 
-        private void InitClipboardMonitor()
+        protected override void OnHandleCreated(EventArgs e)
         {
-            clipboardTimer = new System.Windows.Forms.Timer();
-            clipboardTimer.Interval = 800; // 每0.8秒檢查一次
-            clipboardTimer.Tick += ClipboardTimer_Tick;
-            clipboardTimer.Start();
+            base.OnHandleCreated(e);
+            try { AddClipboardFormatListener(this.Handle); } catch { }
         }
 
-        private void ClipboardTimer_Tick(object sender, EventArgs e)
+        protected override void OnHandleDestroyed(EventArgs e)
         {
-            if (!isMonitoring) return;
-            try
-            {
-                if (Clipboard.ContainsText())
-                {
-                    string text = Clipboard.GetText().Trim();
-                    if (text != lastClipboardText && IsValidPath(text))
-                    {
-                        lastClipboardText = text;
-                        OpenPath(text);
-                    }
-                }
-            }
-            catch { /* 忽略剪貼簿存取例外 */ }
+            try { RemoveClipboardFormatListener(this.Handle); } catch { }
+            base.OnHandleDestroyed(e);
         }
 
         private bool IsValidPath(string path)
         {
             // 支援多語言路徑，判斷是否為存在的檔案或資料夾
             return Directory.Exists(path) || File.Exists(path);
+        }
+
+        private string NormalizePath(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+            string text = raw.Trim().Trim('"');
+
+            if (text.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+            {
+                try { text = new Uri(text).LocalPath; } catch { }
+            }
+
+            text = text.Replace('/', '\\');
+            text = Environment.ExpandEnvironmentVariables(text);
+            return text.Trim();
         }
 
         private void OpenPath(string path)
@@ -129,6 +151,7 @@ namespace ClipboardApp
                     FileName = path,
                     UseShellExecute = true
                 });
+                lastOpenedPath = path;
             }
             catch { /* 忽略開啟失敗 */ }
         }
@@ -159,6 +182,58 @@ namespace ClipboardApp
         {
             trayIcon.Visible = false;
             base.OnFormClosing(e);
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_CLIPBOARDUPDATE && isMonitoring)
+            {
+                try
+                {
+                    if (Clipboard.ContainsText())
+                    {
+                        string text = NormalizePath(Clipboard.GetText());
+                        if (!string.IsNullOrEmpty(text) && IsValidPath(text))
+                        {
+                            OpenPath(text);
+                        }
+                    }
+                }
+                catch { }
+            }
+            base.WndProc(ref m);
+        }
+
+        private bool IsStartupEnabled()
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(RunRegPath, writable: false);
+                var val = key?.GetValue(RunValueName) as string;
+                string exe = Application.ExecutablePath;
+                return !string.IsNullOrEmpty(val) && val.Trim('"').Equals(exe, StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
+        }
+
+        private void SetStartup(bool enable)
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(RunRegPath, writable: true);
+                if (key == null) return;
+
+                string exe = Application.ExecutablePath;
+                if (enable)
+                {
+                    key.SetValue(RunValueName, $"\"{exe}\"");
+                }
+                else
+                {
+                    key.DeleteValue(RunValueName, throwOnMissingValue: false);
+                }
+            }
+            catch { }
         }
 
         private void InitializeComponent() { /* 無設計師元件，空實作 */ }
