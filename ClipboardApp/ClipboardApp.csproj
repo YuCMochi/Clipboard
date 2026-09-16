@@ -10,10 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="../icon/**">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Link>icon/%(RecursiveDir)%(Filename)%(Extension)</Link>
-    </Content>
+    <EmbeddedResource Include="../icon/on/32x32.ico"><LogicalName>icon.on.32x32.ico</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="../icon/on/16x16.ico"><LogicalName>icon.on.16x16.ico</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="../icon/off/32x32.ico"><LogicalName>icon.off.32x32.ico</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="../icon/off/16x16.ico"><LogicalName>icon.off.16x16.ico</LogicalName></EmbeddedResource>
   </ItemGroup>
 
 </Project>

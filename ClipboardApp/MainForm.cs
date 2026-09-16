@@ -5,6 +5,7 @@ using System.IO;
 using System.Diagnostics;
 using System.Threading;
 using System.Runtime.InteropServices;
+using System.Reflection;
 using Microsoft.Win32;
 
 namespace ClipboardApp
@@ -58,14 +59,15 @@ namespace ClipboardApp
             Application.Run(new MainForm());
         }
 
-        private Icon LoadBestIcon(string[] paths)
+        private Icon LoadBestIcon(string[] resourceNames)
         {
-            foreach (var path in paths)
+            var asm = Assembly.GetExecutingAssembly();
+            foreach (var name in resourceNames)
             {
-                string absPath = Path.GetFullPath(path, AppDomain.CurrentDomain.BaseDirectory);
-                if (File.Exists(absPath))
+                using var stream = asm.GetManifestResourceStream(name);
+                if (stream != null)
                 {
-                    return new Icon(absPath);
+                    return new Icon(stream);
                 }
             }
             return SystemIcons.Application;
@@ -73,16 +75,8 @@ namespace ClipboardApp
 
         private void LoadIcons()
         {
-            string exeDir = AppDomain.CurrentDomain.BaseDirectory;
-            string iconDir = Path.Combine(exeDir, "icon");
-            iconOn = LoadBestIcon(new string[] {
-                Path.Combine(iconDir, "on", "32x32.ico"),
-                Path.Combine(iconDir, "on", "16x16.ico")
-            });
-            iconOff = LoadBestIcon(new string[] {
-                Path.Combine(iconDir, "off", "32x32.ico"),
-                Path.Combine(iconDir, "off", "16x16.ico")
-            });
+            iconOn = LoadBestIcon(new string[] { "icon.on.32x32.ico", "icon.on.16x16.ico" });
+            iconOff = LoadBestIcon(new string[] { "icon.off.32x32.ico", "icon.off.16x16.ico" });
         }
 
         private void InitTray()
