@@ -4,7 +4,7 @@
 // 一起變成 windows subsystem，測試輸出就看不到了。
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::path::{Path, PathBuf};
 
 use windows::core::{w, PCWSTR, PWSTR};
@@ -44,8 +44,6 @@ thread_local! {
     static MONITORING: Cell<bool> = const { Cell::new(true) };
     static ICON_ON: Cell<HICON> = Cell::new(HICON::default());
     static ICON_OFF: Cell<HICON> = Cell::new(HICON::default());
-    // 連續收到同一路徑只開一次：有些程式一次複製會觸發多則 WM_CLIPBOARDUPDATE
-    static LAST_OPENED: RefCell<String> = const { RefCell::new(String::new()) };
 }
 
 fn main() {
@@ -157,16 +155,9 @@ fn handle_clipboard() {
     let Some(path) = normalize(&text) else {
         return;
     };
-    if !is_valid(&path) {
-        return;
+    if is_valid(&path) {
+        open_path(&path);
     }
-
-    let s = path.to_string_lossy().into_owned();
-    if LAST_OPENED.with_borrow(|last| last.eq_ignore_ascii_case(&s)) {
-        return;
-    }
-    open_path(&path);
-    LAST_OPENED.with_borrow_mut(|last| *last = s);
 }
 
 fn normalize(raw: &str) -> Option<PathBuf> {
