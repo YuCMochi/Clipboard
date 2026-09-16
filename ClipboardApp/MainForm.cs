@@ -123,7 +123,8 @@ namespace ClipboardApp
 
         private bool IsValidPath(string path)
         {
-            // 支援多語言路徑，判斷是否為存在的檔案或資料夾
+            // 只接受絕對路徑，避免裸檔名（如 gpedit.msc）靠工作目錄湊巧命中系統指令
+            if (!Path.IsPathRooted(path)) return false;
             return Directory.Exists(path) || File.Exists(path);
         }
 
