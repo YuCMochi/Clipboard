@@ -1,0 +1,6 @@
+// 1 = exe 圖示（ID 最小者 Explorer 會拿來當應用程式圖示），2/3 = 托盤 on/off
+1 ICON "icon\\app\\256x256.ico"
+2 ICON "icon\\on\\32x32.ico"
+3 ICON "icon\\off\\32x32.ico"
+
+1 24 "app.manifest"
