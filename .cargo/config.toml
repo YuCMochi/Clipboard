@@ -1,0 +1,4 @@
+# 靜態連結 C runtime：exe 不再依賴 VCRUNTIME140.dll，
+# 沒裝 Visual C++ Redistributable 的電腦也能直接執行
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
