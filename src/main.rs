@@ -35,6 +35,7 @@ const TRAY_UID: u32 = 1;
 const ID_STARTUP: usize = 1;
 const ID_TOGGLE: usize = 2;
 const ID_EXIT: usize = 3;
+const ID_ABOUT: usize = 4;
 
 // 對應 app.rc 的資源 ID
 const IDI_ON: u16 = 2;
@@ -123,6 +124,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             match (wp.0 & 0xFFFF) as usize {
                 ID_STARTUP => set_startup(!is_startup_enabled()),
                 ID_TOGGLE => toggle_monitoring(hwnd),
+                ID_ABOUT => show_about(hwnd),
                 ID_EXIT => {
                     let _ = DestroyWindow(hwnd);
                 }
@@ -156,7 +158,7 @@ fn handle_clipboard() {
         return;
     };
     if is_valid(&path) {
-        open_path(&path);
+        shell_open(&path.to_string_lossy());
     }
 }
 
@@ -186,8 +188,9 @@ fn is_valid(p: &Path) -> bool {
     p.is_absolute() && p.exists()
 }
 
-fn open_path(p: &Path) {
-    let wide: Vec<u16> = p.to_string_lossy().encode_utf16().chain(Some(0)).collect();
+/// 用預設程式開啟路徑或網址（等同在檔案總管雙擊）
+fn shell_open(target: &str) {
+    let wide: Vec<u16> = target.encode_utf16().chain(Some(0)).collect();
     unsafe {
         ShellExecuteW(
             HWND::default(),
@@ -295,6 +298,8 @@ unsafe fn show_menu(hwnd: HWND) {
         w!("恢復監控")
     };
     let _ = AppendMenuW(menu, MF_STRING, ID_TOGGLE, toggle);
+    let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+    let _ = AppendMenuW(menu, MF_STRING, ID_ABOUT, w!("關於"));
     let _ = AppendMenuW(menu, MF_STRING, ID_EXIT, w!("退出"));
 
     let mut pt = POINT::default();
@@ -304,6 +309,26 @@ unsafe fn show_menu(hwnd: HWND) {
     let _ = TrackPopupMenu(menu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, None);
     let _ = PostMessageW(hwnd, WM_NULL, WPARAM(0), LPARAM(0));
     let _ = DestroyMenu(menu);
+}
+
+// MessageBox 的文字不能點，所以用「是/否」按鈕代替超連結
+unsafe fn show_about(hwnd: HWND) {
+    let text = format!(
+        "ClipboardApp v{}\n作者：{}\n{}\n\n要開啟 GitHub 頁面嗎？\0",
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_AUTHORS"),
+        env!("CARGO_PKG_REPOSITORY"),
+    );
+    let text: Vec<u16> = text.encode_utf16().collect();
+    let answer = MessageBoxW(
+        hwnd,
+        PCWSTR(text.as_ptr()),
+        w!("關於 ClipboardApp"),
+        MB_YESNO | MB_ICONINFORMATION | MB_SETFOREGROUND,
+    );
+    if answer == IDYES {
+        shell_open(env!("CARGO_PKG_REPOSITORY"));
+    }
 }
 
 // --- 開機自動啟動 ---------------------------------------------------------
