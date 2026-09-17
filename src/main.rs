@@ -18,8 +18,8 @@ use windows::Win32::System::Environment::ExpandEnvironmentStringsW;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::Shell::{
-    PathCreateFromUrlW, ShellExecuteW, Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD,
-    NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW,
+    PathCreateFromUrlW, ShellExecuteW, Shell_NotifyIconW, NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP,
+    NIIF_INFO, NIM_ADD, NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW,
 };
 use windows::Win32::UI::WindowsAndMessaging::*;
 use winreg::enums::{HKEY_CURRENT_USER, KEY_SET_VALUE};
@@ -30,7 +30,11 @@ const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const RUN_VALUE: &str = "ClipboardApp";
 
 const WM_TRAY: u32 = WM_APP + 1;
+// 第二個實例啟動時送給既有實例，請它跳通知，讓使用者雙擊 exe 時一定有回饋
+const WM_ALREADY_RUNNING: u32 = WM_APP + 2;
 const TRAY_UID: u32 = 1;
+const CLASS_NAME: PCWSTR = w!("ClipboardAppWnd");
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const ID_STARTUP: usize = 1;
 const ID_TOGGLE: usize = 2;
@@ -55,15 +59,18 @@ fn main() {
         // handle 不釋放，活到行程結束。
         let _mutex = CreateMutexW(None, true, w!("ClipboardApp_SingleInstance_Mutex"));
         if GetLastError() == ERROR_ALREADY_EXISTS {
+            // 舊的 C# 版沒有這個視窗類別，找不到就直接結束
+            if let Ok(existing) = FindWindowW(CLASS_NAME, PCWSTR::null()) {
+                let _ = PostMessageW(existing, WM_ALREADY_RUNNING, WPARAM(0), LPARAM(0));
+            }
             return;
         }
 
         let hinst: HMODULE = GetModuleHandleW(None).expect("GetModuleHandleW");
-        let class = w!("ClipboardAppWnd");
         let wc = WNDCLASSW {
             lpfnWndProc: Some(wndproc),
             hInstance: hinst.into(),
-            lpszClassName: class,
+            lpszClassName: CLASS_NAME,
             ..Default::default()
         };
         RegisterClassW(&wc);
@@ -72,7 +79,7 @@ fn main() {
         // 不用 HWND_MESSAGE：message-only window 搭剪貼簿監聽有已知的雷。
         let hwnd = CreateWindowExW(
             WINDOW_EX_STYLE(0),
-            class,
+            CLASS_NAME,
             w!("ClipboardApp"),
             WS_OVERLAPPED,
             0,
@@ -94,6 +101,11 @@ fn main() {
         WM_TASKBAR_CREATED.set(RegisterWindowMessageW(w!("TaskbarCreated")));
         let _ = AddClipboardFormatListener(hwnd);
         tray_add(hwnd);
+        show_balloon(
+            hwnd,
+            &format!("ClipboardApp v{VERSION} 已啟動"),
+            "複製檔案或資料夾路徑即可自動開啟。圖示在系統匣，右鍵開啟選單。",
+        );
 
         let mut msg = MSG::default();
         // > 0：GetMessageW 出錯時回 -1，用 as_bool() 會變成無窮迴圈
@@ -136,6 +148,19 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             let _ = Shell_NotifyIconW(NIM_DELETE, &tray_data(hwnd));
             let _ = RemoveClipboardFormatListener(hwnd);
             PostQuitMessage(0);
+            LRESULT(0)
+        }
+        WM_ALREADY_RUNNING => {
+            let state = if MONITORING.get() {
+                "監控中。"
+            } else {
+                "目前暫停監控，左鍵點圖示可恢復。"
+            };
+            show_balloon(
+                hwnd,
+                &format!("ClipboardApp v{VERSION} 已在執行中"),
+                &format!("圖示在系統匣，右鍵開啟選單。{state}"),
+            );
             LRESULT(0)
         }
         m if m != 0 && m == WM_TASKBAR_CREATED.get() => {
@@ -252,9 +277,29 @@ unsafe fn tray_add(hwnd: HWND) {
     } else {
         ICON_OFF.get()
     };
-    let tip: Vec<u16> = "Clipboard 路徑自動開啟".encode_utf16().collect();
-    nid.szTip[..tip.len()].copy_from_slice(&tip);
+    fill_wide(&mut nid.szTip, &format!("Clipboard 路徑自動開啟 v{VERSION}"));
     let _ = Shell_NotifyIconW(NIM_ADD, &nid);
+}
+
+/// 系統匣彈出通知（Windows 10 會轉成右下角的通知卡片）
+unsafe fn show_balloon(hwnd: HWND, title: &str, text: &str) {
+    let mut nid = tray_data(hwnd);
+    nid.uFlags = NIF_INFO;
+    nid.dwInfoFlags = NIIF_INFO;
+    fill_wide(&mut nid.szInfoTitle, title);
+    fill_wide(&mut nid.szInfo, text);
+    let _ = Shell_NotifyIconW(NIM_MODIFY, &nid);
+}
+
+/// 寫入固定長度的 UTF-16 欄位，超長就截斷並保留結尾的 null
+fn fill_wide(dst: &mut [u16], s: &str) {
+    let max = dst.len() - 1;
+    let mut n = 0;
+    for (d, c) in dst.iter_mut().zip(s.encode_utf16().take(max)) {
+        *d = c;
+        n += 1;
+    }
+    dst[n] = 0;
 }
 
 // ponytail: on/off 只進 32x32，16x16 讓 Windows 縮。兩個尺寸是各自獨立的 .ico
@@ -315,7 +360,7 @@ unsafe fn show_menu(hwnd: HWND) {
 unsafe fn show_about(hwnd: HWND) {
     let text = format!(
         "ClipboardApp v{}\n作者：{}\n{}\n\n要開啟 GitHub 頁面嗎？\0",
-        env!("CARGO_PKG_VERSION"),
+        VERSION,
         env!("CARGO_PKG_AUTHORS"),
         env!("CARGO_PKG_REPOSITORY"),
     );
@@ -412,6 +457,18 @@ mod tests {
             assert!(is_valid(&p), "應接受: {f:?} -> {p:?}");
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fill_wide_truncates_and_keeps_null() {
+        let mut buf = [0xFFFFu16; 4];
+        fill_wide(&mut buf, "路徑自動開啟");
+        assert_eq!(String::from_utf16_lossy(&buf[..3]), "路徑自");
+        assert_eq!(buf[3], 0, "截斷後最後一格必須是 null");
+
+        let mut buf = [0xFFFFu16; 8];
+        fill_wide(&mut buf, "ab");
+        assert_eq!(&buf[..3], &[b'a' as u16, b'b' as u16, 0]);
     }
 
     #[test]
