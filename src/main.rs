@@ -28,6 +28,8 @@ use winreg::RegKey;
 // 沿用 C# 版的登錄檔位置與值名，兩版之間的開機自動啟動設定可以互通
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const RUN_VALUE: &str = "ClipboardApp";
+// 開機自動啟動時帶的參數，用來跳過「已啟動」通知
+const AUTOSTART_ARG: &str = "--autostart";
 
 const WM_TRAY: u32 = WM_APP + 1;
 // 第二個實例啟動時送給既有實例，請它跳通知，讓使用者雙擊 exe 時一定有回饋
@@ -101,11 +103,19 @@ fn main() {
         WM_TASKBAR_CREATED.set(RegisterWindowMessageW(w!("TaskbarCreated")));
         let _ = AddClipboardFormatListener(hwnd);
         tray_add(hwnd);
-        show_balloon(
-            hwnd,
-            &format!("ClipboardApp v{VERSION} 已啟動"),
-            "複製檔案或資料夾路徑即可自動開啟。圖示在系統匣，右鍵開啟選單。",
-        );
+
+        if is_startup_enabled() {
+            // 把舊格式（沒有 --autostart）的開機設定升級成新格式；已是新格式則等於重寫同一個值
+            set_startup(true);
+        }
+        // 開機自動啟動不跳通知，手動雙擊才跳
+        if !std::env::args().any(|a| a == AUTOSTART_ARG) {
+            show_balloon(
+                hwnd,
+                &format!("ClipboardApp v{VERSION} 已啟動"),
+                "複製檔案或資料夾路徑即可自動開啟。圖示在系統匣，右鍵開啟選單。",
+            );
+        }
 
         let mut msg = MSG::default();
         // > 0：GetMessageW 出錯時回 -1，用 as_bool() 會變成無窮迴圈
@@ -392,7 +402,17 @@ fn is_startup_enabled() -> bool {
         return false;
     };
     let exe = exe_path();
-    !exe.is_empty() && val.trim_matches('"').eq_ignore_ascii_case(&exe)
+    !exe.is_empty() && run_value_path(&val).eq_ignore_ascii_case(&exe)
+}
+
+/// 取出 Run 值裡的 exe 路徑。新格式是 `"路徑" --autostart`，
+/// v2.1.0 以前（含 C# 版）寫的是 `"路徑"`，兩種都要認得。
+fn run_value_path(val: &str) -> &str {
+    let val = val.trim();
+    match val.strip_prefix('"').and_then(|rest| rest.split_once('"')) {
+        Some((path, _args)) => path,
+        None => val.trim_end_matches(AUTOSTART_ARG).trim_end(),
+    }
 }
 
 fn set_startup(enable: bool) {
@@ -402,7 +422,8 @@ fn set_startup(enable: bool) {
         return;
     };
     if enable {
-        let _ = key.set_value(RUN_VALUE, &format!("\"{}\"", exe_path()));
+        let value = format!("\"{}\" {AUTOSTART_ARG}", exe_path());
+        let _ = key.set_value(RUN_VALUE, &value);
     } else {
         let _ = key.delete_value(RUN_VALUE);
     }
@@ -457,6 +478,22 @@ mod tests {
             assert!(is_valid(&p), "應接受: {f:?} -> {p:?}");
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_value_path_reads_old_and_new_formats() {
+        let exe = r"C:\Program Files\My App\ClipboardApp.exe";
+        let cases = [
+            format!("\"{exe}\" --autostart"), // 新格式
+            format!("\"{exe}\""),             // v2.1.0 以前、C# 版
+            format!("  \"{exe}\"  "),
+        ];
+        for v in &cases {
+            assert_eq!(run_value_path(v), exe, "無法解析: {v:?}");
+        }
+        // 沒加引號（不是我們寫的，但別人手動改過也要能讀）
+        assert_eq!(run_value_path(r"C:\x\a.exe"), r"C:\x\a.exe");
+        assert_eq!(run_value_path(r"C:\x\a.exe --autostart"), r"C:\x\a.exe");
     }
 
     #[test]
