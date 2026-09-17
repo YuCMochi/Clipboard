@@ -44,6 +44,8 @@ thread_local! {
     static MONITORING: Cell<bool> = const { Cell::new(true) };
     static ICON_ON: Cell<HICON> = Cell::new(HICON::default());
     static ICON_OFF: Cell<HICON> = Cell::new(HICON::default());
+    // explorer.exe 重啟時廣播的訊息；收到要重新加入托盤圖示，否則圖示消失但程式還在跑
+    static WM_TASKBAR_CREATED: Cell<u32> = const { Cell::new(0) };
 }
 
 fn main() {
@@ -88,15 +90,9 @@ fn main() {
         ICON_ON.set(load_icon(hinst, IDI_ON, cx, cy));
         ICON_OFF.set(load_icon(hinst, IDI_OFF, cx, cy));
 
+        WM_TASKBAR_CREATED.set(RegisterWindowMessageW(w!("TaskbarCreated")));
         let _ = AddClipboardFormatListener(hwnd);
-
-        let mut nid = tray_data(hwnd);
-        nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-        nid.uCallbackMessage = WM_TRAY;
-        nid.hIcon = ICON_ON.get();
-        let tip: Vec<u16> = "Clipboard 路徑自動開啟".encode_utf16().collect();
-        nid.szTip[..tip.len()].copy_from_slice(&tip);
-        let _ = Shell_NotifyIconW(NIM_ADD, &nid);
+        tray_add(hwnd);
 
         let mut msg = MSG::default();
         // > 0：GetMessageW 出錯時回 -1，用 as_bool() 會變成無窮迴圈
@@ -138,6 +134,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             let _ = Shell_NotifyIconW(NIM_DELETE, &tray_data(hwnd));
             let _ = RemoveClipboardFormatListener(hwnd);
             PostQuitMessage(0);
+            LRESULT(0)
+        }
+        m if m != 0 && m == WM_TASKBAR_CREATED.get() => {
+            tray_add(hwnd);
             LRESULT(0)
         }
         _ => DefWindowProcW(hwnd, msg, wp, lp),
@@ -238,6 +238,20 @@ fn tray_data(hwnd: HWND) -> NOTIFYICONDATAW {
         uID: TRAY_UID,
         ..Default::default()
     }
+}
+
+unsafe fn tray_add(hwnd: HWND) {
+    let mut nid = tray_data(hwnd);
+    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    nid.uCallbackMessage = WM_TRAY;
+    nid.hIcon = if MONITORING.get() {
+        ICON_ON.get()
+    } else {
+        ICON_OFF.get()
+    };
+    let tip: Vec<u16> = "Clipboard 路徑自動開啟".encode_utf16().collect();
+    nid.szTip[..tip.len()].copy_from_slice(&tip);
+    let _ = Shell_NotifyIconW(NIM_ADD, &nid);
 }
 
 // ponytail: on/off 只進 32x32，16x16 讓 Windows 縮。兩個尺寸是各自獨立的 .ico
