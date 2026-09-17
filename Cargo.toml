@@ -1,6 +1,6 @@
 [package]
 name = "clipboard-app"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
 
 # exe 名稱沿用 C# 版：升級時檔名不變，開機自動啟動的登錄檔項目才不會失效
