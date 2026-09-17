@@ -2,6 +2,9 @@
 name = "clipboard-app"
 version = "2.0.0"
 edition = "2021"
+# version / authors / repository 會在編譯時讀進程式，顯示在「關於」視窗
+authors = ["YuCMochi"]
+repository = "https://github.com/YuCMochi/Clipboard"
 
 # exe 名稱沿用 C# 版：升級時檔名不變，開機自動啟動的登錄檔項目才不會失效
 [[bin]]
