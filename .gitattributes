@@ -1,0 +1,3 @@
+# 文字檔一律用 LF。cargo 會用 LF 重寫 Cargo.lock，若 checkout 時被
+# core.autocrlf 轉成 CRLF，每次 build 後 git 都會誤報 Cargo.lock 已修改。
+* text=auto eol=lf
