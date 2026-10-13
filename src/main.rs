@@ -30,6 +30,9 @@ const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const RUN_VALUE: &str = "ClipboardApp";
 // 開機自動啟動時帶的參數，用來跳過「已啟動」通知
 const AUTOSTART_ARG: &str = "--autostart";
+// 「僅開啟資料夾」開關的存放位置（DWORD，缺值視為開啟）
+const SETTINGS_KEY: &str = r"Software\ClipboardApp";
+const FOLDERS_ONLY_VALUE: &str = "FoldersOnly";
 
 const WM_TRAY: u32 = WM_APP + 1;
 // 第二個實例啟動時送給既有實例，請它跳通知，讓使用者雙擊 exe 時一定有回饋
@@ -42,6 +45,7 @@ const ID_STARTUP: usize = 1;
 const ID_TOGGLE: usize = 2;
 const ID_EXIT: usize = 3;
 const ID_ABOUT: usize = 4;
+const ID_FOLDERS_ONLY: usize = 5;
 
 // 對應 app.rc 的資源 ID
 const IDI_ON: u16 = 2;
@@ -49,6 +53,7 @@ const IDI_OFF: u16 = 3;
 
 thread_local! {
     static MONITORING: Cell<bool> = const { Cell::new(true) };
+    static FOLDERS_ONLY: Cell<bool> = const { Cell::new(true) };
     static ICON_ON: Cell<HICON> = Cell::new(HICON::default());
     static ICON_OFF: Cell<HICON> = Cell::new(HICON::default());
     // explorer.exe 重啟時廣播的訊息；收到要重新加入托盤圖示，否則圖示消失但程式還在跑
@@ -101,6 +106,7 @@ fn main() {
         ICON_OFF.set(load_icon(hinst, IDI_OFF, cx, cy));
 
         WM_TASKBAR_CREATED.set(RegisterWindowMessageW(w!("TaskbarCreated")));
+        FOLDERS_ONLY.set(load_folders_only());
         let _ = AddClipboardFormatListener(hwnd);
         tray_add(hwnd);
 
@@ -146,6 +152,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             match (wp.0 & 0xFFFF) as usize {
                 ID_STARTUP => set_startup(!is_startup_enabled()),
                 ID_TOGGLE => toggle_monitoring(hwnd),
+                ID_FOLDERS_ONLY => {
+                    let on = !FOLDERS_ONLY.get();
+                    FOLDERS_ONLY.set(on);
+                    save_folders_only(on);
+                }
                 ID_ABOUT => show_about(hwnd),
                 ID_EXIT => {
                     let _ = DestroyWindow(hwnd);
@@ -192,7 +203,7 @@ fn handle_clipboard() {
     let Some(path) = normalize(&text) else {
         return;
     };
-    if is_valid(&path) {
+    if is_valid(&path, FOLDERS_ONLY.get()) {
         shell_open(&path.to_string_lossy());
     }
 }
@@ -216,11 +227,14 @@ fn normalize(raw: &str) -> Option<PathBuf> {
     (!t.is_empty()).then(|| PathBuf::from(t))
 }
 
-fn is_valid(p: &Path) -> bool {
+fn is_valid(p: &Path, folders_only: bool) -> bool {
     // 只接受絕對路徑，避免裸檔名（如 gpedit.msc）靠工作目錄湊巧命中系統指令。
     // Rust 的 is_absolute 比 C# 的 Path.IsPathRooted 更嚴格，連 `\Windows\...`
     // 和 `C:foo` 這種「有 root 但非絕對」的寫法也一併擋掉。
-    p.is_absolute() && p.exists()
+    //
+    // folders_only：看檔案系統實際狀態（is_dir）而非副檔名——資料夾可以叫 v1.2，
+    // 檔案可以叫 LICENSE。檔案（含 .exe/.lnk）一律不開，避免繞過 Windows 的執行警告。
+    p.is_absolute() && if folders_only { p.is_dir() } else { p.exists() }
 }
 
 /// 用預設程式開啟路徑或網址（等同在檔案總管雙擊）
@@ -353,6 +367,12 @@ unsafe fn show_menu(hwnd: HWND) {
         w!("恢復監控")
     };
     let _ = AppendMenuW(menu, MF_STRING, ID_TOGGLE, toggle);
+    let folders = if FOLDERS_ONLY.get() {
+        MF_CHECKED
+    } else {
+        MF_UNCHECKED
+    };
+    let _ = AppendMenuW(menu, MF_STRING | folders, ID_FOLDERS_ONLY, w!("僅開啟資料夾"));
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = AppendMenuW(menu, MF_STRING, ID_ABOUT, w!("關於"));
     let _ = AppendMenuW(menu, MF_STRING, ID_EXIT, w!("退出"));
@@ -429,6 +449,19 @@ fn set_startup(enable: bool) {
     }
 }
 
+fn load_folders_only() -> bool {
+    RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(SETTINGS_KEY)
+        .and_then(|k| k.get_value::<u32, _>(FOLDERS_ONLY_VALUE))
+        .map_or(true, |v| v != 0)
+}
+
+fn save_folders_only(on: bool) {
+    if let Ok((key, _)) = RegKey::predef(HKEY_CURRENT_USER).create_subkey(SETTINGS_KEY) {
+        let _ = key.set_value(FOLDERS_ONLY_VALUE, &u32::from(on));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -446,7 +479,7 @@ mod tests {
             "C:notrooted",
         ];
         for s in cases {
-            let rejected = normalize(s).map_or(true, |p| !is_valid(&p));
+            let rejected = normalize(s).map_or(true, |p| !is_valid(&p, false));
             assert!(rejected, "應拒絕: {s:?}");
         }
     }
@@ -475,7 +508,7 @@ mod tests {
         ];
         for f in &forms {
             let p = normalize(f).unwrap_or_else(|| panic!("normalize 回傳 None: {f:?}"));
-            assert!(is_valid(&p), "應接受: {f:?} -> {p:?}");
+            assert!(is_valid(&p, false), "應接受: {f:?} -> {p:?}");
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -512,6 +545,25 @@ mod tests {
     fn expands_environment_variables() {
         let p = normalize("%TEMP%").expect("%TEMP% 應正規化成功");
         assert!(!p.to_string_lossy().contains('%'), "未展開: {p:?}");
-        assert!(is_valid(&p), "%TEMP% 應展開成有效路徑: {p:?}");
+        assert!(is_valid(&p, false), "%TEMP% 應展開成有效路徑: {p:?}");
+    }
+
+    #[test]
+    fn folders_only_blocks_files_by_real_type_not_extension() {
+        let base = std::env::temp_dir().join("clipboard_rs_folders_only");
+        let dotted = base.join("v1.2"); // 資料夾但有「副檔名」
+        let exe = base.join("a.exe");
+        let bare = base.join("LICENSE"); // 檔案但沒副檔名
+        std::fs::create_dir_all(&dotted).unwrap();
+        std::fs::write(&exe, b"").unwrap();
+        std::fs::write(&bare, b"").unwrap();
+
+        assert!(is_valid(&base, true));
+        assert!(is_valid(&dotted, true));
+        assert!(!is_valid(&exe, true));
+        assert!(!is_valid(&bare, true));
+        // 關閉開關時維持原行為
+        assert!(is_valid(&exe, false));
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
