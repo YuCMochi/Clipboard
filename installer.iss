@@ -27,7 +27,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
 
 [Tasks]
-Name: "autostart"; Description: "開機自動啟動 (Start with Windows)"; Flags: unchecked
+Name: "autostart"; Description: "開機自動啟動 (Start with Windows)"
 
 [Files]
 Source: "target\release\ClipboardApp.exe"; DestDir: "{app}"; Flags: ignoreversion
