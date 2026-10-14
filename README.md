@@ -22,6 +22,14 @@ cargo build --release
 
 產物在 `target/release/ClipboardApp.exe`，單一檔案即可執行。
 
+打包安裝程式（需要 [Inno Setup 6](https://jrsoftware.org/isinfo.php)，先 `cargo build --release`）：
+
+```
+ISCC /DAppVersion=<Cargo.toml 的版本號> installer.iss
+```
+
+產物在 `dist/ClipboardApp-Setup.exe`。
+
 跑測試：
 
 ```
