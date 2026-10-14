@@ -4,8 +4,10 @@
 // 一起變成 windows subsystem，測試輸出就看不到了。
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use windows::core::{w, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
@@ -33,6 +35,11 @@ const AUTOSTART_ARG: &str = "--autostart";
 // 「僅開啟資料夾」開關的存放位置（DWORD，缺值視為開啟）
 const SETTINGS_KEY: &str = r"Software\ClipboardApp";
 const FOLDERS_ONLY_VALUE: &str = "FoldersOnly";
+// 防濫用：每分鐘最多自動開啟幾次，超過就自動暫停監控並通知
+const RATE_LIMIT_VALUE: &str = "RateLimitPerMinute";
+const RATE_WINDOW: Duration = Duration::from_secs(60);
+const RATE_OPTIONS: [u32; 4] = [10, 20, 50, 100];
+const RATE_DEFAULT: u32 = 20;
 
 const WM_TRAY: u32 = WM_APP + 1;
 // 第二個實例啟動時送給既有實例，請它跳通知，讓使用者雙擊 exe 時一定有回饋
@@ -46,6 +53,8 @@ const ID_TOGGLE: usize = 2;
 const ID_EXIT: usize = 3;
 const ID_ABOUT: usize = 4;
 const ID_FOLDERS_ONLY: usize = 5;
+// 頻率上限子選單：ID_RATE_BASE + RATE_OPTIONS 的索引
+const ID_RATE_BASE: usize = 100;
 
 // 對應 app.rc 的資源 ID
 const IDI_ON: u16 = 2;
@@ -54,6 +63,9 @@ const IDI_OFF: u16 = 3;
 thread_local! {
     static MONITORING: Cell<bool> = const { Cell::new(true) };
     static FOLDERS_ONLY: Cell<bool> = const { Cell::new(true) };
+    static RATE_LIMIT: Cell<u32> = const { Cell::new(RATE_DEFAULT) };
+    // 最近 RATE_WINDOW 內每次自動開啟的時間點
+    static OPENS: RefCell<VecDeque<Instant>> = const { RefCell::new(VecDeque::new()) };
     static ICON_ON: Cell<HICON> = Cell::new(HICON::default());
     static ICON_OFF: Cell<HICON> = Cell::new(HICON::default());
     // explorer.exe 重啟時廣播的訊息；收到要重新加入托盤圖示，否則圖示消失但程式還在跑
@@ -107,6 +119,7 @@ fn main() {
 
         WM_TASKBAR_CREATED.set(RegisterWindowMessageW(w!("TaskbarCreated")));
         FOLDERS_ONLY.set(load_folders_only());
+        RATE_LIMIT.set(load_rate_limit());
         let _ = AddClipboardFormatListener(hwnd);
         tray_add(hwnd);
 
@@ -136,7 +149,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
     match msg {
         WM_CLIPBOARDUPDATE => {
             if MONITORING.get() {
-                handle_clipboard();
+                handle_clipboard(hwnd);
             }
             LRESULT(0)
         }
@@ -156,6 +169,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                     let on = !FOLDERS_ONLY.get();
                     FOLDERS_ONLY.set(on);
                     save_folders_only(on);
+                }
+                id @ ID_RATE_BASE.. => {
+                    if let Some(&n) = RATE_OPTIONS.get(id - ID_RATE_BASE) {
+                        RATE_LIMIT.set(n);
+                        save_rate_limit(n);
+                    }
                 }
                 ID_ABOUT => show_about(hwnd),
                 ID_EXIT => {
@@ -194,7 +213,22 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
 
 // --- 剪貼簿 ---------------------------------------------------------------
 
-fn handle_clipboard() {
+/// 滑動視窗計數：回傳 true 表示已達上限（此次不計入）；否則記錄這次並回傳 false。
+fn rate_exceeded(opens: &mut VecDeque<Instant>, now: Instant, limit: u32) -> bool {
+    while opens
+        .front()
+        .is_some_and(|&t| now.duration_since(t) >= RATE_WINDOW)
+    {
+        opens.pop_front();
+    }
+    if opens.len() >= limit as usize {
+        return true;
+    }
+    opens.push_back(now);
+    false
+}
+
+fn handle_clipboard(hwnd: HWND) {
     // clipboard-win 內建重試：WM_CLIPBOARDUPDATE 當下來源程式往往還佔著剪貼簿，
     // 直接 OpenClipboard 會拿到 ACCESS_DENIED
     let Ok(text) = clipboard_win::get_clipboard_string() else {
@@ -203,9 +237,23 @@ fn handle_clipboard() {
     let Some(path) = normalize(&text) else {
         return;
     };
-    if is_valid(&path, FOLDERS_ONLY.get()) {
-        shell_open(&path.to_string_lossy());
+    if !is_valid(&path, FOLDERS_ONLY.get()) {
+        return;
     }
+    let limit = RATE_LIMIT.get();
+    if OPENS.with_borrow_mut(|o| rate_exceeded(o, Instant::now(), limit)) {
+        // 自動暫停而非只丟棄：洪水持續時每次都通知本身就是干擾
+        unsafe {
+            toggle_monitoring(hwnd);
+            show_balloon(
+                hwnd,
+                "ClipboardApp 已暫停監控",
+                &format!("偵測到每分鐘超過 {limit} 次的開啟請求，可能有程式在大量複製路徑。左鍵點圖示可恢復。"),
+            );
+        }
+        return;
+    }
+    shell_open(&path.to_string_lossy());
 }
 
 fn normalize(raw: &str) -> Option<PathBuf> {
@@ -345,6 +393,10 @@ unsafe fn load_icon(hinst: HMODULE, id: u16, cx: i32, cy: i32) -> HICON {
 unsafe fn toggle_monitoring(hwnd: HWND) {
     let on = !MONITORING.get();
     MONITORING.set(on);
+    if on {
+        // 恢復後重新計數，否則剛恢復又立刻觸發
+        OPENS.with_borrow_mut(VecDeque::clear);
+    }
 
     let mut nid = tray_data(hwnd);
     nid.uFlags = NIF_ICON;
@@ -373,6 +425,16 @@ unsafe fn show_menu(hwnd: HWND) {
         MF_UNCHECKED
     };
     let _ = AppendMenuW(menu, MF_STRING | folders, ID_FOLDERS_ONLY, w!("僅開啟資料夾"));
+    if let Ok(sub) = CreatePopupMenu() {
+        let cur = RATE_LIMIT.get();
+        for (i, n) in RATE_OPTIONS.iter().enumerate() {
+            let label: Vec<u16> = format!("{n} 次\0").encode_utf16().collect();
+            let check = if *n == cur { MF_CHECKED } else { MF_UNCHECKED };
+            let _ = AppendMenuW(sub, MF_STRING | check, ID_RATE_BASE + i, PCWSTR(label.as_ptr()));
+        }
+        // 子選單隨父選單一起 DestroyMenu
+        let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, w!("每分鐘開啟上限"));
+    }
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = AppendMenuW(menu, MF_STRING, ID_ABOUT, w!("關於"));
     let _ = AppendMenuW(menu, MF_STRING, ID_EXIT, w!("退出"));
@@ -462,9 +524,39 @@ fn save_folders_only(on: bool) {
     }
 }
 
+fn load_rate_limit() -> u32 {
+    RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(SETTINGS_KEY)
+        .and_then(|k| k.get_value::<u32, _>(RATE_LIMIT_VALUE))
+        .ok()
+        .filter(|n| RATE_OPTIONS.contains(n))
+        .unwrap_or(RATE_DEFAULT)
+}
+
+fn save_rate_limit(n: u32) {
+    if let Ok((key, _)) = RegKey::predef(HKEY_CURRENT_USER).create_subkey(SETTINGS_KEY) {
+        let _ = key.set_value(RATE_LIMIT_VALUE, &n);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rate_limit_slides_over_window() {
+        let t0 = Instant::now();
+        let mut q = VecDeque::new();
+        for i in 0..3 {
+            assert!(!rate_exceeded(&mut q, t0 + Duration::from_secs(i), 3));
+        }
+        // 視窗內第 4 次被擋，且不計入
+        assert!(rate_exceeded(&mut q, t0 + Duration::from_secs(10), 3));
+        assert_eq!(q.len(), 3);
+        // 最早那筆滿 60 秒後滑出，空出一格
+        assert!(!rate_exceeded(&mut q, t0 + Duration::from_secs(60), 3));
+        assert!(rate_exceeded(&mut q, t0 + Duration::from_secs(60), 3));
+    }
 
     #[test]
     fn rejects_non_paths() {
