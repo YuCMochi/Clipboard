@@ -27,13 +27,13 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use winreg::enums::{HKEY_CURRENT_USER, KEY_SET_VALUE};
 use winreg::RegKey;
 
-// 沿用 C# 版的登錄檔位置與值名，兩版之間的開機自動啟動設定可以互通
+// 登錄檔位置與值名：開機自動啟動 (Run 值) 與使用者設定
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-const RUN_VALUE: &str = "ClipboardApp";
+const RUN_VALUE: &str = "Pathie";
 // 開機自動啟動時帶的參數，用來跳過「已啟動」通知
 const AUTOSTART_ARG: &str = "--autostart";
 // 「僅開啟資料夾」開關的存放位置（DWORD，缺值視為開啟）
-const SETTINGS_KEY: &str = r"Software\ClipboardApp";
+const SETTINGS_KEY: &str = r"Software\Pathie";
 const FOLDERS_ONLY_VALUE: &str = "FoldersOnly";
 // 防濫用：每分鐘最多自動開啟幾次，超過就自動暫停監控並通知
 const RATE_LIMIT_VALUE: &str = "RateLimitPerMinute";
@@ -45,7 +45,7 @@ const WM_TRAY: u32 = WM_APP + 1;
 // 第二個實例啟動時送給既有實例，請它跳通知，讓使用者雙擊 exe 時一定有回饋
 const WM_ALREADY_RUNNING: u32 = WM_APP + 2;
 const TRAY_UID: u32 = 1;
-const CLASS_NAME: PCWSTR = w!("ClipboardAppWnd");
+const CLASS_NAME: PCWSTR = w!("PathieWnd");
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const ID_STARTUP: usize = 1;
@@ -74,11 +74,10 @@ thread_local! {
 
 fn main() {
     unsafe {
-        // 單一實例。沿用 C# 版的 mutex 名稱，所以新舊版本之間也會互斥。
-        // handle 不釋放，活到行程結束。
-        let _mutex = CreateMutexW(None, true, w!("ClipboardApp_SingleInstance_Mutex"));
+        // 單一實例。handle 不釋放,活到行程結束。
+        let _mutex = CreateMutexW(None, true, w!("Pathie_SingleInstance_Mutex"));
         if GetLastError() == ERROR_ALREADY_EXISTS {
-            // 舊的 C# 版沒有這個視窗類別，找不到就直接結束
+            // 找不到既有視窗就直接結束
             if let Ok(existing) = FindWindowW(CLASS_NAME, PCWSTR::null()) {
                 let _ = PostMessageW(existing, WM_ALREADY_RUNNING, WPARAM(0), LPARAM(0));
             }
@@ -607,7 +606,7 @@ mod tests {
 
     #[test]
     fn run_value_path_reads_old_and_new_formats() {
-        let exe = r"C:\Program Files\My App\ClipboardApp.exe";
+        let exe = r"C:\Program Files\My App\Pathie.exe";
         let cases = [
             format!("\"{exe}\" --autostart"), // 新格式
             format!("\"{exe}\""),             // v2.1.0 以前、C# 版
