@@ -1,3 +1,4 @@
+; 注意：exe 檔名、登錄檔位置、mutex 仍沿用 ClipboardApp，改了會讓舊版使用者的設定與開機啟動失效
 ; 編譯：ISCC /DAppVersion=<版本> installer.iss（版本號取自 Cargo.toml，見 README）
 ; 前置：先 cargo build --release
 #ifndef AppVersion
@@ -7,12 +8,12 @@
 [Setup]
 ; AppId 固定，之後升級才會被視為同一個程式
 AppId={{6F1D2B7A-3C54-4E0B-9A8E-C11B0A5D7E42}
-AppName=ClipboardApp
+AppName=Pathie
 AppVersion={#AppVersion}
 AppPublisher=YuCMochi
 AppPublisherURL=https://github.com/YuCMochi/Clipboard
 DefaultDirName={autopf}\ClipboardApp
-DefaultGroupName=ClipboardApp
+DefaultGroupName=Pathie
 ; 每使用者安裝：不用系統管理員權限，程式本來也只寫 HKCU
 PrivilegesRequired=lowest
 ; 偵測到程式執行中會提示關閉，exe 才不會被鎖住
@@ -20,7 +21,7 @@ AppMutex=ClipboardApp_SingleInstance_Mutex
 SetupIconFile=icon\app\256x256.ico
 UninstallDisplayIcon={app}\ClipboardApp.exe
 OutputDir=dist
-OutputBaseFilename=ClipboardApp-Setup
+OutputBaseFilename=Pathie-Setup
 Compression=lzma2
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -32,6 +33,10 @@ Name: "autostart"; Description: "開機自動啟動 (Start with Windows)"
 [Files]
 Source: "target\release\ClipboardApp.exe"; DestDir: "{app}"; Flags: ignoreversion
 
+; 舊版捷徑名稱是 ClipboardApp，升級時清掉避免開始功能表出現兩個
+[InstallDelete]
+Type: files; Name: "{autoprograms}\ClipboardApp.lnk"
+
 [Icons]
 Name: "{autoprograms}\ClipboardApp"; Filename: "{app}\ClipboardApp.exe"
 
@@ -40,7 +45,7 @@ Name: "{autoprograms}\ClipboardApp"; Filename: "{app}\ClipboardApp.exe"
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ClipboardApp"; ValueData: """{app}\ClipboardApp.exe"" --autostart"; Tasks: autostart
 
 [Run]
-Filename: "{app}\ClipboardApp.exe"; Description: "立即啟動 ClipboardApp"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\ClipboardApp.exe"; Description: "立即啟動 Pathie"; Flags: nowait postinstall skipifsilent
 
 [Code]
 // Run 值可能是程式內的開關寫的而非安裝程式，所以解除安裝時一律清掉

@@ -1,6 +1,8 @@
-# ClipboardApp
+# Pathie
 
-ClipboardApp 是一款 Windows 桌面工具，會在系統工具列常駐，監控你的剪貼簿內容，當你複製有效的檔案或資料夾路徑時，會自動幫你開啟該路徑。可在系統工具列左鍵點擊圖示快速暫停/恢復監控，或右鍵退出程式。
+Pathie 是一款 Windows 桌面工具，會在系統工具列常駐，監控你的剪貼簿內容，當你複製有效的檔案或資料夾路徑時，會自動幫你開啟該路徑。可在系統工具列左鍵點擊圖示快速暫停/恢復監控，或右鍵退出程式。
+
+（舊名 ClipboardApp。為了讓舊版使用者升級後設定與開機自動啟動不失效，exe 檔名仍為 `ClipboardApp.exe`。）
 
 以 Rust 實作，直接呼叫 Win32 API，不需要 .NET runtime，產出單一原生 exe。
 
@@ -28,7 +30,7 @@ cargo build --release
 ISCC /DAppVersion=<Cargo.toml 的版本號> installer.iss
 ```
 
-產物在 `dist/ClipboardApp-Setup.exe`。
+產物在 `dist/Pathie-Setup.exe`。
 
 跑測試：
 

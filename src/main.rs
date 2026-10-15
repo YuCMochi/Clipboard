@@ -1,4 +1,4 @@
-// ClipboardApp：常駐系統匣，偵測剪貼簿中的有效路徑並自動開啟。
+// Pathie：常駐系統匣，偵測剪貼簿中的有效路徑並自動開啟。
 //
 // cfg_attr 是必要的：直接寫 windows_subsystem 會連 `cargo test` 的測試執行檔
 // 一起變成 windows subsystem，測試輸出就看不到了。
@@ -99,7 +99,7 @@ fn main() {
         let hwnd = CreateWindowExW(
             WINDOW_EX_STYLE(0),
             CLASS_NAME,
-            w!("ClipboardApp"),
+            w!("Pathie"),
             WS_OVERLAPPED,
             0,
             0,
@@ -131,7 +131,7 @@ fn main() {
         if !std::env::args().any(|a| a == AUTOSTART_ARG) {
             show_balloon(
                 hwnd,
-                &format!("ClipboardApp v{VERSION} 已啟動"),
+                &format!("Pathie v{VERSION} 已啟動"),
                 "複製檔案或資料夾路徑即可自動開啟。圖示在系統匣，右鍵開啟選單。",
             );
         }
@@ -198,7 +198,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             };
             show_balloon(
                 hwnd,
-                &format!("ClipboardApp v{VERSION} 已在執行中"),
+                &format!("Pathie v{VERSION} 已在執行中"),
                 &format!("圖示在系統匣，右鍵開啟選單。{state}"),
             );
             LRESULT(0)
@@ -247,7 +247,7 @@ fn handle_clipboard(hwnd: HWND) {
             toggle_monitoring(hwnd);
             show_balloon(
                 hwnd,
-                "ClipboardApp 已暫停監控",
+                "Pathie 已暫停監控",
                 &format!("偵測到每分鐘超過 {limit} 次的開啟請求，可能有程式在大量複製路徑。左鍵點圖示可恢復。"),
             );
         }
@@ -349,7 +349,7 @@ unsafe fn tray_add(hwnd: HWND) {
     } else {
         ICON_OFF.get()
     };
-    fill_wide(&mut nid.szTip, &format!("Clipboard 路徑自動開啟 v{VERSION}"));
+    fill_wide(&mut nid.szTip, &format!("Pathie 路徑自動開啟 v{VERSION}"));
     let _ = Shell_NotifyIconW(NIM_ADD, &nid);
 }
 
@@ -451,7 +451,7 @@ unsafe fn show_menu(hwnd: HWND) {
 // MessageBox 的文字不能點，所以用「是/否」按鈕代替超連結
 unsafe fn show_about(hwnd: HWND) {
     let text = format!(
-        "ClipboardApp v{}\n作者：{}\n{}\n\n要開啟 GitHub 頁面嗎？\0",
+        "Pathie v{}\n作者：{}\n{}\n\n要開啟 GitHub 頁面嗎？\0",
         VERSION,
         env!("CARGO_PKG_AUTHORS"),
         env!("CARGO_PKG_REPOSITORY"),
@@ -460,7 +460,7 @@ unsafe fn show_about(hwnd: HWND) {
     let answer = MessageBoxW(
         hwnd,
         PCWSTR(text.as_ptr()),
-        w!("關於 ClipboardApp"),
+        w!("關於 Pathie"),
         MB_YESNO | MB_ICONINFORMATION | MB_SETFOREGROUND,
     );
     if answer == IDYES {
