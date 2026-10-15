@@ -1,4 +1,4 @@
-// ClipboardApp：常駐系統匣，偵測剪貼簿中的有效路徑並自動開啟。
+// Pathie：常駐系統匣，偵測剪貼簿中的有效路徑並自動開啟。
 //
 // cfg_attr 是必要的：直接寫 windows_subsystem 會連 `cargo test` 的測試執行檔
 // 一起變成 windows subsystem，測試輸出就看不到了。
@@ -27,13 +27,13 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use winreg::enums::{HKEY_CURRENT_USER, KEY_SET_VALUE};
 use winreg::RegKey;
 
-// 沿用 C# 版的登錄檔位置與值名，兩版之間的開機自動啟動設定可以互通
+// 登錄檔位置與值名：開機自動啟動 (Run 值) 與使用者設定
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-const RUN_VALUE: &str = "ClipboardApp";
+const RUN_VALUE: &str = "Pathie";
 // 開機自動啟動時帶的參數，用來跳過「已啟動」通知
 const AUTOSTART_ARG: &str = "--autostart";
 // 「僅開啟資料夾」開關的存放位置（DWORD，缺值視為開啟）
-const SETTINGS_KEY: &str = r"Software\ClipboardApp";
+const SETTINGS_KEY: &str = r"Software\Pathie";
 const FOLDERS_ONLY_VALUE: &str = "FoldersOnly";
 // 防濫用：每分鐘最多自動開啟幾次，超過就自動暫停監控並通知
 const RATE_LIMIT_VALUE: &str = "RateLimitPerMinute";
@@ -45,7 +45,7 @@ const WM_TRAY: u32 = WM_APP + 1;
 // 第二個實例啟動時送給既有實例，請它跳通知，讓使用者雙擊 exe 時一定有回饋
 const WM_ALREADY_RUNNING: u32 = WM_APP + 2;
 const TRAY_UID: u32 = 1;
-const CLASS_NAME: PCWSTR = w!("ClipboardAppWnd");
+const CLASS_NAME: PCWSTR = w!("PathieWnd");
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const ID_STARTUP: usize = 1;
@@ -74,11 +74,10 @@ thread_local! {
 
 fn main() {
     unsafe {
-        // 單一實例。沿用 C# 版的 mutex 名稱，所以新舊版本之間也會互斥。
-        // handle 不釋放，活到行程結束。
-        let _mutex = CreateMutexW(None, true, w!("ClipboardApp_SingleInstance_Mutex"));
+        // 單一實例。handle 不釋放,活到行程結束。
+        let _mutex = CreateMutexW(None, true, w!("Pathie_SingleInstance_Mutex"));
         if GetLastError() == ERROR_ALREADY_EXISTS {
-            // 舊的 C# 版沒有這個視窗類別，找不到就直接結束
+            // 找不到既有視窗就直接結束
             if let Ok(existing) = FindWindowW(CLASS_NAME, PCWSTR::null()) {
                 let _ = PostMessageW(existing, WM_ALREADY_RUNNING, WPARAM(0), LPARAM(0));
             }
@@ -99,7 +98,7 @@ fn main() {
         let hwnd = CreateWindowExW(
             WINDOW_EX_STYLE(0),
             CLASS_NAME,
-            w!("ClipboardApp"),
+            w!("Pathie"),
             WS_OVERLAPPED,
             0,
             0,
@@ -131,7 +130,7 @@ fn main() {
         if !std::env::args().any(|a| a == AUTOSTART_ARG) {
             show_balloon(
                 hwnd,
-                &format!("ClipboardApp v{VERSION} 已啟動"),
+                &format!("Pathie v{VERSION} 已啟動"),
                 "複製檔案或資料夾路徑即可自動開啟。圖示在系統匣，右鍵開啟選單。",
             );
         }
@@ -198,7 +197,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             };
             show_balloon(
                 hwnd,
-                &format!("ClipboardApp v{VERSION} 已在執行中"),
+                &format!("Pathie v{VERSION} 已在執行中"),
                 &format!("圖示在系統匣，右鍵開啟選單。{state}"),
             );
             LRESULT(0)
@@ -247,7 +246,7 @@ fn handle_clipboard(hwnd: HWND) {
             toggle_monitoring(hwnd);
             show_balloon(
                 hwnd,
-                "ClipboardApp 已暫停監控",
+                "Pathie 已暫停監控",
                 &format!("偵測到每分鐘超過 {limit} 次的開啟請求，可能有程式在大量複製路徑。左鍵點圖示可恢復。"),
             );
         }
@@ -349,7 +348,7 @@ unsafe fn tray_add(hwnd: HWND) {
     } else {
         ICON_OFF.get()
     };
-    fill_wide(&mut nid.szTip, &format!("Clipboard 路徑自動開啟 v{VERSION}"));
+    fill_wide(&mut nid.szTip, &format!("Pathie 路徑自動開啟 v{VERSION}"));
     let _ = Shell_NotifyIconW(NIM_ADD, &nid);
 }
 
@@ -451,7 +450,7 @@ unsafe fn show_menu(hwnd: HWND) {
 // MessageBox 的文字不能點，所以用「是/否」按鈕代替超連結
 unsafe fn show_about(hwnd: HWND) {
     let text = format!(
-        "ClipboardApp v{}\n作者：{}\n{}\n\n要開啟 GitHub 頁面嗎？\0",
+        "Pathie v{}\n作者：{}\n{}\n\n要開啟 GitHub 頁面嗎？\0",
         VERSION,
         env!("CARGO_PKG_AUTHORS"),
         env!("CARGO_PKG_REPOSITORY"),
@@ -460,7 +459,7 @@ unsafe fn show_about(hwnd: HWND) {
     let answer = MessageBoxW(
         hwnd,
         PCWSTR(text.as_ptr()),
-        w!("關於 ClipboardApp"),
+        w!("關於 Pathie"),
         MB_YESNO | MB_ICONINFORMATION | MB_SETFOREGROUND,
     );
     if answer == IDYES {
@@ -607,7 +606,7 @@ mod tests {
 
     #[test]
     fn run_value_path_reads_old_and_new_formats() {
-        let exe = r"C:\Program Files\My App\ClipboardApp.exe";
+        let exe = r"C:\Program Files\My App\Pathie.exe";
         let cases = [
             format!("\"{exe}\" --autostart"), // 新格式
             format!("\"{exe}\""),             // v2.1.0 以前、C# 版

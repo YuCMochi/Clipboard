@@ -17,12 +17,12 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "FileDescription", "ClipboardApp"
-            VALUE "ProductName", "ClipboardApp"
+            VALUE "FileDescription", "Pathie"
+            VALUE "ProductName", "Pathie"
             VALUE "FileVersion", VER_STR
             VALUE "ProductVersion", VER_STR
             VALUE "CompanyName", VER_AUTHOR
-            VALUE "OriginalFilename", "ClipboardApp.exe"
+            VALUE "OriginalFilename", "Pathie.exe"
         END
     END
     BLOCK "VarFileInfo"
