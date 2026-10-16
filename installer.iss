@@ -10,7 +10,7 @@ AppId={{B3A7C0E1-5D2F-4A68-8E19-7F4C2D9A6B05}
 AppName=Pathie
 AppVersion={#AppVersion}
 AppPublisher=YuCMochi
-AppPublisherURL=https://github.com/YuCMochi/Clipboard
+AppPublisherURL=https://github.com/YuCMochi/Pathie
 DefaultDirName={autopf}\Pathie
 DefaultGroupName=Pathie
 ; 每使用者安裝：不用系統管理員權限，程式本來也只寫 HKCU
