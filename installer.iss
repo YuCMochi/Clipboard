@@ -26,6 +26,10 @@ SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
 
+[Languages]
+; 繁中語言檔隨 repo 附上(Inno Setup 預設安裝不一定有)
+Name: "zhtw"; MessagesFile: "installer-lang\ChineseTraditional.isl"
+
 [Tasks]
 Name: "autostart"; Description: "開機自動啟動 (Start with Windows)"
 
